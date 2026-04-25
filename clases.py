@@ -93,3 +93,51 @@ def cargar(ruta):
     else:
         print("  >> Extensión no soportada. Use .mat o .csv.")
         return None
+    
+
+class Persona:
+    def __init__(self, nombre="", cc=0, edad=0, genero=""):
+        self.__nombre = nombre
+        self.__cc = cc
+        self.__edad = edad
+        self.__genero = genero
+        # Cada paciente puede tener varios archivos cargados
+        self.__archivos_csv = {}   # nombre -> ArchivoSIATA
+        self.__archivos_mat = {}   # nombre -> ArchivoEEG
+
+    # --- setters ---
+    def asignar_nombre(self, t):  self.__nombre = t
+    def asignar_cc(self, t):      self.__cc = t
+    def asignar_edad(self, e):    self.__edad = e
+    def asignar_genero(self, g):  self.__genero = g
+
+    # --- getters ---
+    def ver_nombre(self):  return self.__nombre
+    def ver_cc(self):      return self.__cc
+    def ver_edad(self):    return self.__edad
+    def ver_genero(self):  return self.__genero
+
+    # --- archivos ---
+    def agregar_csv(self, alias, archivo):
+        self.__archivos_csv[alias] = archivo
+
+    def agregar_mat(self, alias, archivo):
+        self.__archivos_mat[alias] = archivo
+
+    def ver_csv(self, alias):
+        return self.__archivos_csv.get(alias, None)
+
+    def ver_mat(self, alias):
+        return self.__archivos_mat.get(alias, None)
+
+    def listar_csv(self):
+        return list(self.__archivos_csv.keys())
+
+    def listar_mat(self):
+        return list(self.__archivos_mat.keys())
+
+    def __str__(self):
+        return (f"Paciente {self.__nombre} (CC {self.__cc}, "
+                f"{self.__edad} años, {self.__genero}) | "
+                f"CSV: {self.listar_csv()} | MAT: {self.listar_mat()}")
+    
