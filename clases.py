@@ -342,3 +342,161 @@ class ArchivoSIATA:
             )
         plt.show()
     
+class ArchivoEEG:
+    """
+    Manipula los archivos .mat de electroencefalografia (EEG) 
+      Frecuencia de muestreo: 1 kHz.
+    """
+
+    FS = 1000  # Hz
+
+    def __init__(self, ruta):
+        self.__ruta = ruta
+        self.__contenido = loadmat(ruta)
+        self.__llaves = [k for k in self.__contenido.keys()
+                         if not k.startswith("__")]
+        self.__senal = None         # matriz seleccionada (puede ser 3D)
+        self.__llave_actual = None
+
+    # ---------- exploracion ----------
+    def whosmat(self):
+        """Devuelve la lista de variables guardadas en el .mat."""
+        return whosmat(self.__ruta)
+
+    def llaves(self):
+        return self.__llaves
+
+    def asignar_senal(self, llave):
+        if llave not in self.__contenido:
+            print(f"  >> La llave '{llave}' no existe en el .mat.")
+            return None
+        self.__senal = np.asarray(self.__contenido[llave])
+        self.__llave_actual = llave
+        print(f"  >> Señal cargada. Forma: {self.__senal.shape}, "
+              f"dimension: {self.__senal.ndim}")
+        return self.__senal.shape
+
+    def senal(self):
+        return self.__senal
+
+    def llave_actual(self):
+        return self.__llave_actual
+
+    # ---------- helpers ----------
+    def _matriz_2d(self):
+        """Devuelve una vista 2D (canales x muestras) de la señal."""
+        if self.__senal is None:
+            return None
+        if self.__senal.ndim == 2:
+            return self.__senal
+        if self.__senal.ndim == 3:
+            # Convencion: (canales, muestras, epocas) -> promedio de epocas.
+            # Si la convencion del archivo fuera distinta, igual queda 2D.
+            return self.__senal.mean(axis=2)
+        # Para mas dimensiones colapsamos a 2D
+        return self.__senal.reshape(self.__senal.shape[0], -1)
+
+    def numero_canales(self):
+        m = self._matriz_2d()
+        return 0 if m is None else m.shape[0]
+
+    def numero_puntos(self):
+        m = self._matriz_2d()
+        return 0 if m is None else m.shape[1]
+
+    # ---------- operacion (a): suma de 3 canales ----------
+    def sumar_3_canales(self, c1, c2, c3, pmin, pmax):
+        """Devuelve (segmento 3xN, suma 1xN) entre pmin y pmax."""
+        m = self._matriz_2d()
+        if m is None:
+            print("  >> No hay señal cargada.")
+            return None, None
+        n_ch, n_pt = m.shape
+        for c in (c1, c2, c3):
+            if c < 0 or c >= n_ch:
+                print(f"  >> Canal {c} fuera de rango (0..{n_ch-1}).")
+                return None, None
+        if pmin < 0 or pmax > n_pt or pmin >= pmax:
+            print(f"  >> Rango de puntos invalido (0..{n_pt}).")
+            return None, None
+
+        seg = m[[c1, c2, c3], pmin:pmax]
+        return seg, seg.sum(axis=0)
+
+    def graficar_canales_y_suma(self, c1, c2, c3, pmin, pmax,
+                                graficadora=None, guardar=True,
+                                formato="png"):
+        seg, suma = self.sumar_3_canales(c1, c2, c3, pmin, pmax)
+        if seg is None:
+            return
+        t = np.arange(pmin, pmax) / self.FS  # segundos
+
+        fig, axs = plt.subplots(2, 1, figsize=(11, 7))
+        offsets = [0, 200, 400]   # microvoltios para separar visualmente
+        for i, c in enumerate([c1, c2, c3]):
+            axs[0].plot(t, seg[i] + offsets[i], label=f"Canal {c}")
+        axs[0].set_title(f"Canales seleccionados: {c1}, {c2}, {c3}")
+        axs[0].set_xlabel("Tiempo (s)")
+        axs[0].set_ylabel("Voltaje (uV)")
+        axs[0].legend(loc="upper right")
+        axs[0].grid(True, alpha=0.3)
+
+        axs[1].plot(t, suma, color="crimson")
+        axs[1].set_title(f"Suma de los canales {c1} + {c2} + {c3}")
+        axs[1].set_xlabel("Tiempo (s)")
+        axs[1].set_ylabel("Voltaje (uV)")
+        axs[1].grid(True, alpha=0.3)
+
+        fig.tight_layout()
+        if guardar and graficadora is not None:
+            nombre = (f"eeg_suma_canales_{c1}_{c2}_{c3}_"
+                      f"{pmin}-{pmax}.{formato}")
+            graficadora.guardar(fig, nombre)
+        plt.show()
+
+    # ---------- operacion (b): promedio y desviacion en 3D ----------
+    def estadisticos_3d(self, eje, graficadora=None, guardar=True):
+        """
+        Sobre la matriz SIN modificar (3D), calcula promedio y desviacion
+        a lo largo del eje pedido y los muestra con stem en dos subplots.
+        """
+        if self.__senal is None:
+            print("  >> No hay señal cargada.")
+            return
+        if self.__senal.ndim != 3:
+            print(f"  >> La señal no es 3D (es {self.__senal.ndim}D). "
+                  "El taller pide trabajar sobre la matriz 3D original.")
+            return
+        if eje not in (0, 1, 2):
+            print("  >> El eje debe ser 0, 1 o 2.")
+            return
+
+        prom = np.mean(self.__senal, axis=eje)
+        desv = np.std(self.__senal, axis=eje)
+
+        # Reducimos a 1D promediando las dimensiones que sobren para
+        # poder graficar con stem.
+        prom_1d = prom
+        desv_1d = desv
+        while prom_1d.ndim > 1:
+            prom_1d = prom_1d.mean(axis=-1)
+            desv_1d = desv_1d.mean(axis=-1)
+
+        fig, axs = plt.subplots(2, 1, figsize=(11, 7))
+        axs[0].stem(prom_1d)
+        axs[0].set_title(f"Promedio a lo largo del eje {eje}")
+        axs[0].set_xlabel("Indice")
+        axs[0].set_ylabel("Promedio (uV)")
+        axs[0].grid(True, alpha=0.3)
+
+        axs[1].stem(desv_1d)
+        axs[1].set_title(f"Desviacion estandar a lo largo del eje {eje}")
+        axs[1].set_xlabel("Indice")
+        axs[1].set_ylabel("Desv. estandar (uV)")
+        axs[1].grid(True, alpha=0.3)
+
+        fig.tight_layout()
+        if guardar and graficadora is not None:
+            graficadora.guardar(fig, f"eeg_promedio_desv_eje{eje}.png")
+        plt.show()
+
